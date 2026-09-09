@@ -1,10 +1,101 @@
-# TraderMarket livestream prediction MVP
+<div align="center">
 
-[![CI](https://github.com/nniiovoo/livestream-market/actions/workflows/ci.yml/badge.svg)](https://github.com/nniiovoo/livestream-market/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+# TraderMarket
 
-TraderMarket is a two-outcome livestream prediction market for Polygon PoS Amoy. It uses one community-funded fixed-product market maker per market, and a Live Room publishes many of them over one livestream — a headline market plus micro markets, each its own FPMM clone with its own reserves, LP shares, fees and resolution, bounded by the room's `maxOpenSlots`. For each one: anyone except the participants, their reward wallets, the source gate, resolvers, and disclosed insiders may provide test-USDC liquidity and earn the 0.3% LP fee.
+**A two-outcome prediction market over a livestream.**
+Non-custodial, settled on chain, resolved from signed source evidence — never from chat, a clip, or an operator's say-so.
 
-This repository contains a working local web app and a tested, deployable testnet contract system. It has **not** been broadcast to Polygon Amoy because this workspace does not contain a funded deployment signer or the participant, gate, and resolver addresses. It must not be presented as publicly deployed until those addresses are configured and the deployment transactions are confirmed.
+[![CI](https://github.com/nniiovoo/livestream-market/actions/workflows/ci.yml/badge.svg)](https://github.com/nniiovoo/livestream-market/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
+![Solidity](https://img.shields.io/badge/solidity-0.8.26-363636)
+![Node](https://img.shields.io/badge/node-24.14-5FA04E)
+![Foundry](https://img.shields.io/badge/foundry-v1.7.1-CF9C4A)
+![Tests](https://img.shields.io/badge/tests-113%20contracts%20%C2%B7%20627%20service%20%C2%B7%20154%20app-brightgreen)
+
+<img src="docs/images/app-desktop.png" alt="A TraderMarket live room: a prepared event market asking which guest appears first on the creator's livestream, with two outcome cards and a test-USDC trade panel" width="860">
+
+</div>
+
+> [!WARNING]
+> **This has never been broadcast to Polygon Amoy.** The contracts are tested and
+> deployable, and the app runs locally against a real chain — but this workspace
+> holds no funded deployment signer and no participant, gate, or resolver
+> addresses. Nothing here is deployed, and it must not be described as if it
+> were. The collateral is Circle **test** USDC with no real-world value, and the
+> contracts have had **no independent audit**. See [SECURITY.md](SECURITY.md),
+> which is unusually specific about what is still wrong.
+
+*The screenshot above is the app running against a real local room — the banner
+saying no market contract is configured is the software telling the truth about
+its own build, and it is left in deliberately.*
+
+## What this is
+
+TraderMarket is a two-outcome livestream prediction market for Polygon PoS Amoy.
+It uses one community-funded fixed-product market maker per market, and a Live
+Room publishes many of them over one livestream — a headline market plus micro
+markets, each its own FPMM clone with its own reserves, LP shares, fees and
+resolution, bounded by the room's `maxOpenSlots`. For each one: anyone except
+the participants, their reward wallets, the source gate, resolvers, and
+disclosed insiders may provide test-USDC liquidity and earn the 0.3% LP fee.
+
+## Who holds what
+
+The design point is that no single key can open a question, decide it, or pay
+it out. The Coordinator — the thing that serves the website — holds no chain key
+at all.
+
+```mermaid
+flowchart TB
+  subgraph ops["Five processes, five separate keys"]
+    direction LR
+    CONN["<b>Source Connector</b><br/>signs the hash-chained event log"]
+    GATE["<b>Source Gate Authority</b><br/>GATE_SIGNER_ROLE<br/>signs one-use EIP-712 permits"]
+    PUB["<b>Program Publisher</b><br/>PROGRAM_PUBLISHER_ROLE<br/>publishes a slot"]
+    RES["<b>Resolver Set × 3</b><br/>RESOLVER_ROLE<br/>2-of-3 quorum"]
+    KEEP["<b>Keeper</b><br/>holds a key, holds no authority<br/>every call it makes is permissionless"]
+  end
+
+  COORD["<b>Coordinator</b><br/>read tier, realtime edge, the website<br/><i>no chain key — cannot sign anything</i>"]
+
+  CHAIN["<b>On chain</b><br/>LiveRoom · LivePredictionMarket clones<br/>non-upgradeable, config frozen at init"]
+
+  CONN -->|"signed facts + raw provider bytes"| GATE
+  GATE -->|"permit binds room, slot, condition hash,<br/>question text, fees, restricted list"| PUB
+  PUB -->|"publish needs the role AND a fresh permit"| CHAIN
+  RES -->|"two matching attestations, or Invalid"| CHAIN
+  KEEP -->|"finalize · expire challenge · invalidate"| CHAIN
+  CHAIN -.->|"reads only"| COORD
+  COORD -.->|"serves"| USER(["Forecasters and LPs"])
+
+  style COORD fill:#1f1b2e,stroke:#7c5cff,color:#eee
+  style CHAIN fill:#101826,stroke:#3b82f6,color:#eee
+  style ops fill:#12121a,stroke:#333,color:#bbb
+```
+
+Publishing a market needs **both** the Publisher's role and a fresh, single-use
+permit signed by the Gate Authority. Neither key can open a question alone.
+Conflicting or unverifiable resolver reconstructions produce **no** attestation:
+the market fails closed to `Invalid` rather than resolving to either side.
+Conflict is never settled by majority.
+
+## On a phone
+
+<img src="docs/images/app-mobile.png" alt="The same market on a phone: outcome cards, a test-USDC amount selector, and the bottom navigation" width="300" align="right">
+
+The interface is built mobile-first, because that is where a livestream audience
+watches. The same market renders as a single column: the stream, the question
+and the rule that settles it, the two outcomes, and the amount selector.
+
+Every screen states what it does not know. "Awaiting price" is shown rather than
+a placeholder 50¢ — a quote nobody made once fed both the probability bar and
+the trade sheet's estimate, and that is the kind of number a forecaster acts on.
+
+`Testnet only` sits beside the amount selector, and the trade button reads
+`Market not open` until the exact livestream, the contract, and the first
+liquidity are all confirmed.
+
+<br clear="right">
 
 ## Product flow
 
